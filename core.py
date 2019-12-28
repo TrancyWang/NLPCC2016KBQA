@@ -1,43 +1,44 @@
 import sys
 import codecs
-import lcs   #the lcs module is in extension folder
+# import lcs   #the lcs module is in extension folder
 import time
 import json
-
+from scipy.spatial.distance import cosine
+import code
 
 
 class answerCandidate:
     def __init__(self, sub = '', pre = '', qRaw = '', qType = 0, score = 0, kbDict = [], wS = 1, wP = 10, wAP = 100):
-        self.sub = sub     
-        self.pre = pre     
-        self.qRaw = qRaw     
-        self.qType = qType
-        self.score = score
-        self.kbDict = kbDict
-        self.origin = ''
+        self.sub = sub # subject 
+        self.pre = pre # predicate
+        self.qRaw = qRaw # raw question
+        self.qType = qType # question type
+        self.score = score # 分数
+        self.kbDict = kbDict # kd dictionary
+        self.origin = '' 
         self.scoreDetail = [0,0,0,0,0]
-        self.wS = wS
-        self.wP = wP
-        self.wAP = wAP
+        self.wS = wS # subject的权重
+        self.wP = wP # oredicate的权重
+        self.wAP = wAP # answer pattern的权重
         self.scoreSub = 0
         self.scoreAP = 0
         self.scorePre = 0
         
-
     def calcScore(self, qtList, countCharDict, debug=False, includingObj = [], vectorDict = {}):
+        # 最重要的部分，计算该答案的分数
         lenSub = len(self.sub)
         scorePre = 0
         scoreAP = 0
         pre = self.pre
         q = self.qRaw
         subIndex = q.index(self.sub)
-        qWithoutSub1 = q[:subIndex]
-        qWithoutSub2 = q[subIndex+lenSub:]
+        qWithoutSub1 = q[:subIndex] # subject左边的部分
+        qWithoutSub2 = q[subIndex+lenSub:] # subject右边的部分
 
-        qWithoutSub = q.replace(self.sub,'')
-        qtKey = (self.qRaw.replace(self.sub,'(SUB)',1) + ' ||| ' + pre)
+        qWithoutSub = q.replace(self.sub,'') # 去掉subject剩下的部分
+        qtKey = (self.qRaw.replace(self.sub,'(SUB)',1) + ' ||| ' + pre) # 把subject换成(sub)然后加上predicate
         if qtKey in qtList:
-            scoreAP = qtList[qtKey]
+            scoreAP = qtList[qtKey] # 查看当前的问题有没有在知识库中出现过
                     
         self.scoreAP = scoreAP
 
@@ -45,7 +46,10 @@ class answerCandidate:
         qWithoutSubSet2 = set(qWithoutSub2)
         qWithoutSubSet = set(qWithoutSub)
         preLowerSet = set(pre.lower())
+        # code.interact(local=locals())
 
+
+        # 找出predicate和问题前后两部分的最大intersection
         intersection1 = qWithoutSubSet1 & preLowerSet
         intersection2 = qWithoutSubSet2 & preLowerSet
 
@@ -54,6 +58,7 @@ class answerCandidate:
         else:
             maxIntersection = intersection2
 
+        # 计算来自predicate的分数，采用最大overlap的character的倒数 1/(n+1)
         preFactor = 0
         for char in maxIntersection:
             if char in countCharDict:
@@ -91,13 +96,11 @@ class answerCandidate:
                     scorePre = scorePreTmp
 
         if len(vectorDict) != 0 and len(pre) != 0:
-
             scorePre = 0
-            
-            segListPre = []
-            
-            lenPre = len(pre)
 
+            # 找出所有在predicate中出现过的单词的词向量
+            segListPre = []
+            lenPre = len(pre)
             lenPreSum = 0
             for i in range(lenPre):
                 for j in range(lenPre):
@@ -107,7 +110,7 @@ class answerCandidate:
                             segListPre.append(preWordTmp)
                             lenPreSum += len(preWordTmp)
                 
-            
+            # 找出所有在question当中出现过的单词的词向量 
             lenQNS = len(qWithoutSub)
             segListQNS = []
             for i in range(lenQNS):
@@ -116,7 +119,6 @@ class answerCandidate:
                         QNSWordTmp = qWithoutSub[i:i+j+1]
                         if QNSWordTmp in vectorDict:
                             segListQNS.append(QNSWordTmp)
-
 
             # Add Question type rules, ref to Table.1 in the article                
             if qWithoutSub.find('什么时候') != -1 or qWithoutSub.find('何时') != -1:
@@ -128,12 +130,13 @@ class answerCandidate:
             if qWithoutSub.find('多少钱') != -1:
                 segListQNS.append('价格')
 
-
-            
+            # 计算predicate和question之间的词向量cosine similarity 
             for preWord in segListPre:
                 scoreMaxCosine = 0
                 for QNSWord in segListQNS:
-                    cosineTmp = lcs.cosine(vectorDict[preWord],vectorDict[QNSWord])
+                    # cosineTmp = lcs.cosine(vectorDict[preWord],vectorDict[QNSWord])
+                    # cosineTmp = 1 - scipy.spatial.distance.cosine(vectorDict[preWord],vectorDict[QNSWord])
+                    cosineTmp = 1 - cosine(vectorDict[preWord],vectorDict[QNSWord])
                     if cosineTmp > scoreMaxCosine:
                         scoreMaxCosine = cosineTmp
                 scorePre += scoreMaxCosine * len(preWord)
@@ -142,12 +145,12 @@ class answerCandidate:
                 scorePre = 0
             else:
                 scorePre = scorePre / lenPreSum
-            
 
             self.scorePre = scorePre            
 
         scoreSub = 0 
 
+        # 计算subject的权重有多高，可能有些subject本身就是更重要一些，一般来说越罕见的entity重要性越高
         for char in self.sub:
             if char in countCharDict:
                 scoreSub += 1/(countCharDict[char] + 1)
@@ -163,34 +166,28 @@ class answerCandidate:
 
 def getAnswer(sub, pre, kbDict):
     answerList = []
+    # kbDict[entityStr][len(kbDict[entityStr]) - 1][relationStr] = objectStr
+    # 每个subject都有一系列的KB tiples，然后我们找出所有的subject, predicate, object triples
     for kb in kbDict[sub]:
         if pre in kb:
             answerList.append(kb[pre])
    
     return answerList
 
-    
-
-
-
 def answerQ (qRaw, lKey, kbDict, qtList, countCharDict, vectorDict, wP=10, threshold=0, debug=False):
-    q = qRaw.strip().lower()
-    
+    q = qRaw.strip().lower() # 问题转化成小写
     candidateSet = set()
-    
     result = ''
-
- 
     maxScore = 0
-
     bestAnswer = set()
 
     # Get all the candidate triple
+    # kbDict[entityStr][len(kbDict[entityStr]) - 1][relationStr] = objectStr
     for key in lKey:
-        if -1 != q.find(key):
+        if -1 != q.find(key): # 如果问题中出现了该subject，那么我们就要考虑这个subject的triples
             for kb in kbDict[key]:
                 for pre in list(kb):
-                    newAnswerCandidate = answerCandidate(key, pre, q, wP=wP)
+                    newAnswerCandidate = answerCandidate(key, pre, q, wP=wP) # 构建一个新的answer candidate
                     candidateSet.add(newAnswerCandidate)
    
     
@@ -208,7 +205,7 @@ def answerQ (qRaw, lKey, kbDict, qtList, countCharDict, vectorDict, wP=10, thres
             candidateSetIndex.add(strTmp)
             candidateSet.add(aCandidate)
 
-
+    # 针对每一个candidate answer，计算该candidate的分数，然后选择分数最高的作为答案
     for aCandidate in candidateSet:
         scoreTmp = aCandidate.calcScore(qtList, countCharDict,debug)
         if scoreTmp > maxScore:
@@ -216,10 +213,8 @@ def answerQ (qRaw, lKey, kbDict, qtList, countCharDict, vectorDict, wP=10, thres
             bestAnswer = set()
         if scoreTmp == maxScore:
             bestAnswer.add(aCandidate)
-            
-
-
-            
+    
+    # 去除一些重复的答案        
     bestAnswerCopy = bestAnswer.copy()
     bestAnswer = set()
     for aCandidate in bestAnswerCopy:
@@ -231,7 +226,7 @@ def answerQ (qRaw, lKey, kbDict, qtList, countCharDict, vectorDict, wP=10, thres
         if aCfound == 0:
             bestAnswer.add(aCandidate)
 
-
+    # 加入object的分数
     bestAnswerCopy = bestAnswer.copy()
     for aCandidate in bestAnswerCopy:
         if aCandidate.score == aCandidate.scoreSub:
@@ -242,7 +237,7 @@ def answerQ (qRaw, lKey, kbDict, qtList, countCharDict, vectorDict, wP=10, thres
             if scoreReCal == maxScore:
                 bestAnswer.add(aCandidate)
 
-
+    # 加入cosine similarity
     bestAnswerCopy = bestAnswer.copy()
     if len(bestAnswer) > 1: # use word vector to remove duplicated answer
         for aCandidate in bestAnswerCopy:
@@ -252,7 +247,6 @@ def answerQ (qRaw, lKey, kbDict, qtList, countCharDict, vectorDict, wP=10, thres
                 maxScore = scoreReCal
             if scoreReCal == maxScore:
                 bestAnswer.add(aCandidate)
-            
             
     if debug:
         for ai in bestAnswer:
@@ -281,6 +275,7 @@ def loadvectorDict(path, encode = 'utf8'):
     return vectorDict  
 
 def answerAllQ(pathInput, pathOutput, lKey, kbDict, qtList, countCharDict, vectorDict, qIDstart=1, wP=10):
+    # lKey: list of all subjects, keys to kbDict
     fq = open(pathInput, 'r', encoding='utf8')
     i = qIDstart
     timeStart = time.time()
@@ -341,24 +336,26 @@ def answerAllQ(pathInput, pathOutput, lKey, kbDict, qtList, countCharDict, vecto
 
 def loadResAndanswerAllQ(pathInput, pathOutput, pathDict, pathQt, pathCD, pathVD, encode='utf8', qIDstart=1, wP=10):
     print('Start to load kbDict from json format file: ' + pathDict)
-    kbDict = json.load(open(pathDict, 'r', encoding=encode))
+    kbDict = json.load(open(pathDict, 'r', encoding=encode)) # kbJson.cleanPre.alias.utf8
     print('Loaded kbDict completely! kbDic length is '+ str(len(kbDict)))
-    qtList = loadQtList(pathQt, encode)
+    qtList = loadQtList(pathQt, encode) # outputAP
     print('Loaded qtList completely! qtList length is '+ str(len(qtList)))
-    countCharDict = loadcountCharDict(pathCD)
+    countCharDict = loadcountCharDict(pathCD) # countChar
     print('Loaded countCharDict completely! countCharDict length is '+ str(len(countCharDict)))
-    vectorDict = loadvectorDict(pathVD)
+    vectorDict = loadvectorDict(pathVD) # vectorJson.utf8
+    # code.interact(local=locals())
     print('Loaded vectorDict completely! vectorDict length is '+ str(len(vectorDict)))
     answerAllQ(pathInput, pathOutput, list(kbDict), kbDict, qtList, countCharDict, vectorDict, qIDstart=1,wP=wP)
 
 
 if len(sys.argv) == 9:
-    pathInput=sys.argv[1]
-    pathOutput=sys.argv[2]
-    pathDict=sys.argv[3]
-    pathQt=sys.argv[4]
-    pathCD=sys.argv[5]
-    pathVD=sys.argv[6]
-    qIDstart=int(sys.argv[7])
-    defaultWeightPre=float(sys.argv[8])
+    # core.py nlpcc-iccpol-2016.kbqa.testing-data answer kbJson.cleanPre.alias.utf8 outputAP countChar vectorJson.utf8 1 30
+    pathInput=sys.argv[1] # nlpcc-iccpol-2016.kbqa.testing-data
+    pathOutput=sys.argv[2] # answer
+    pathDict=sys.argv[3] # kbJson.cleanPre.alias.utf8
+    pathQt=sys.argv[4] # outputAP
+    pathCD=sys.argv[5] # countChar
+    pathVD=sys.argv[6] # vectorJson.utf8
+    qIDstart=int(sys.argv[7]) # 1
+    defaultWeightPre=float(sys.argv[8]) # 30
     loadResAndanswerAllQ(pathInput, pathOutput, pathDict, pathQt, pathCD, pathVD, 'utf8', qIDstart, defaultWeightPre)
