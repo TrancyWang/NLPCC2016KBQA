@@ -3,8 +3,10 @@ import codecs
 import re
 import json
 import math
+import code
 
 
+# 数一数每个中文字出现的频数，并且取对数。
 def countChar():
     fi = open('nlpcc-iccpol-2016.kbqa.training-data','r',encoding='utf8')
 
@@ -12,14 +14,14 @@ def countChar():
 
     countChar = {}
     for line in fi:
-        if line[1] == 'q':
+        if line[1] == 'q': # 计算问题句子
             q = line[line.index('\t') + 1:].strip()
             for char in q:
                 if char not in countChar:
                     countChar[char] = 1
                 else:
                     countChar[char] += 1
-        if line[1] == 't':
+        if line[1] == 't': # 计算sub和pre
             sub = line[line.index('\t') + 1:line.index(' |||')].strip()
             qNSub = line[line.index(' ||| ') + 5:]
             pre = qNSub[:qNSub.index(' |||')]
@@ -43,6 +45,7 @@ def countChar():
     fo.close()
 
 
+    # 可以在这个文件中看到每个字的log频数
     fotxt = open('countChar.txt','w',encoding='utf8')
 
     for pair in sorted(countChar.items(), key=lambda d:d[1],reverse=True):
@@ -64,14 +67,16 @@ def loadKB(path, encode = 'utf8'):
     newEntityDic={}
     i = 0
     for line in fi:
+        # 河北外国语职业学院 ||| 别名 ||| 河北外国语职业学院
         i += 1
         print('exporting the ' + str(i) + ' triple', end='\r', flush=True)
-        entityStr = line[:line.index(' |||')].strip()
+        entityStr = line[:line.index(' |||')].strip() # subject ||| predicate ||| object
+        # 上面这一行得到了 subject
 
         tmp = line[line.index('||| ') + 4:]
-        relationStr = tmp[:tmp.index(' |||')].strip()
+        relationStr = tmp[:tmp.index(' |||')].strip() # predicate
         relationStr, num = prePattern.subn('', relationStr)
-        objectStr = tmp[tmp.index('||| ') + 4:].strip()
+        objectStr = tmp[tmp.index('||| ') + 4:].strip() # object
         if relationStr == objectStr: #delete the triple if the predicate is the same as object
             continue
         if entityStr not in kbDict:
@@ -80,6 +85,7 @@ def loadKB(path, encode = 'utf8'):
             kbDict[entityStr].append(newEntityDic)
         else:
             kbDict[entityStr][len(kbDict[entityStr]) - 1][relationStr] = objectStr
+            # 其实我不确定这里为什么要使用这个奇怪的数据结构
             
 
     fi.close()
@@ -88,10 +94,12 @@ def loadKB(path, encode = 'utf8'):
     return kbDict
 
 
-
+print("load KB...")
+kbDictRaw = loadKB('nlpcc-iccpol-2016.kbqa.kb')
+# code.interact(local=locals())
 
 def addAliasForKB(kbDictRaw):
-
+    # 在kb中增加alias
     pattern = re.compile(r'[·•\-\s]|(\[[0-9]*\])')
 
     patternSub = re.compile(r'(\s*\(.*\)\s*)|(\s*（.*）\s*)')  # subject需按照 subject (Description) || Predicate || Object 的方式抽取, 其中(Description)可选
@@ -106,6 +114,7 @@ def addAliasForKB(kbDictRaw):
     for key in list(kbDict):
         if patternSub.search(key):
             keyRe, num = patternSub.subn('', key)
+            # 把括号内的东西去掉
             if keyRe not in kbDict:
                 kbDict[keyRe] = kbDict[key]
             else:
@@ -115,6 +124,7 @@ def addAliasForKB(kbDictRaw):
 
     for key in list(kbDict):
         match = patternMark.search(key)
+        # 把书名号括号里的东西去掉
         if match:
             keyRe, num = patternMark.subn(r'\1', key)
             if keyRe not in kbDict:
@@ -127,6 +137,7 @@ def addAliasForKB(kbDictRaw):
     for key in list(kbDict):
         if patternUpper.search(key):
             keyLower = key.lower()
+            # 添加小写
             if keyLower not in kbDict:
                 kbDict[keyLower] = kbDict[key]
             else:
@@ -135,6 +146,7 @@ def addAliasForKB(kbDictRaw):
 
     for key in list(kbDict):
         if patternBlank.search(key):
+            # /s去掉
             keyRe, num = patternBlank.subn('', key)
             if keyRe not in kbDict:
                 kbDict[keyRe] = kbDict[key]
@@ -146,10 +158,10 @@ def addAliasForKB(kbDictRaw):
 
 
 print('Cleaning kb......')
-kbDictRaw = loadKB('nlpcc-iccpol-2016.kbqa.kb')
 kbDict = addAliasForKB(kbDictRaw)
 json.dump(kbDict, open('kbJson.cleanPre.alias.utf8','w',encoding='utf8'))
 print('\nDone!')
+# code.interact(local=locals())
 
 
 
@@ -215,6 +227,13 @@ def getAnswerPatten(inputPath = 'nlpcc-iccpol-2016.kbqa.training-data', outputPa
             p, num = pattern.subn('', p)
             if qRaw.find(s) != -1:
                 qRaw = qRaw.replace(s,'(SUB)', 1)
+            # 把问题中出现的subject变成(SUB)
+
+            # <question id=1>   《机械设计基础》这本书的作者是谁？
+            # <triple id=1>   机械设计基础 ||| 作者 ||| 杨可桢，程光蕴，李仲生
+            # <answer id=1>   杨可桢，程光蕴，李仲生
+
+            #  《(SUB)》这本书的作者是谁？ ||| 作者
            
             qRaw = qRaw.strip() +  ' ||| '  + p
             if qRaw in APList:
