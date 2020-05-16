@@ -18,11 +18,6 @@ import numpy as np
 e = Embedder('/share/data/lang/users/zeweichu/projs/faqbot/zhs.model')
 seg = pkuseg.pkuseg()
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = WeightedAvgModel()
-model.load_state_dict(torch.load("checkpoints/elmo_sim_model-epoch9.py"))
-model = model.to(DEVICE)
-
 class answerCandidate:
     def __init__(self, sub = '', pre = '', qRaw = '', qType = 0, score = 0, kbDict = [], wS = 1, wP = 10, wAP = 100):
         self.sub = sub # subject 
@@ -115,13 +110,11 @@ class answerCandidate:
             preCut = [seg.cut(pre)]
             qWithoutSubCut = [seg.cut(qWithoutSub)]
             data = preCut + qWithoutSubCut
-            embeddings = e.sents2elmo(data, -2)
-            embeddings = np.concatenate([np.expand_dims(emb.mean(1), 0) for emb in embeddings])
-            embeddings = torch.Tensor(embeddings).long().to(DEVICE)
-            rep = model(embeddings) # 2 * 1024
+            embeddings = e.sents2elmo(data, -1)
 
-            pre_embedding = rep[0].cpu().data.numpy()
-            q_embedding = rep[1].cpu().data.numpy()
+            pre_embedding = embeddings[0].mean(0)
+            q_embedding = embeddings[1].mean(0)
+            # code.interact(local=locals())
 
             scorePre = 1 - cosine(pre_embedding, q_embedding)
             self.scorePre = scorePre            

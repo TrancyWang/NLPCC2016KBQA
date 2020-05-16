@@ -20,7 +20,8 @@ seg = pkuseg.pkuseg()
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = SNLIModel()
-model.load_state_dict(torch.load("snli_checkpoints/elmo_sim_model-epoch9.py"))
+# model.load_state_dict(torch.load("snli_checkpoints/elmo_sim_model-epoch9.py"))
+model.load_state_dict(torch.load(sys.argv[9]))
 model = model.to(DEVICE)
 
 class answerCandidate:
@@ -118,8 +119,8 @@ class answerCandidate:
             embeddings = e.sents2elmo(data, -2)
             pre_embedding = np.expand_dims(embeddings[0].mean(1), 0)
             q_embedding = np.expand_dims(embeddings[1].mean(1), 0)
-            pre_embedding = torch.Tensor(pre_embedding).long().to(DEVICE)
-            q_embedding = torch.Tensor(q_embedding).long().to(DEVICE)
+            pre_embedding = torch.Tensor(pre_embedding).to(DEVICE)
+            q_embedding = torch.Tensor(q_embedding).to(DEVICE)
             scorePre = model(pre_embedding, q_embedding).item() # 2 * 1024
             self.scorePre = scorePre            
 
@@ -314,7 +315,7 @@ def loadResAndanswerAllQ(pathInput, pathOutput, pathDict, pathQt, pathCD, pathVD
     answerAllQ(pathInput, pathOutput, list(kbDict), kbDict, qtList, countCharDict, qIDstart=1,wP=wP)
 
 
-if len(sys.argv) == 9:
+if len(sys.argv) == 10:
     # core.py nlpcc-iccpol-2016.kbqa.testing-data answer kbJson.cleanPre.alias.utf8 outputAP countChar vectorJson.utf8 1 30
     pathInput=sys.argv[1] # nlpcc-iccpol-2016.kbqa.testing-data
     pathOutput=sys.argv[2] # answer

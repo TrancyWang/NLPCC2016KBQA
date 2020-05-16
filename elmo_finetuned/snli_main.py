@@ -71,9 +71,10 @@ model = SNLIModel().to(DEVICE)
 optimizer = torch.optim.Adam(model.parameters())
 # code.interact(local=locals())
 
-num_epochs = 10
+num_epochs = 30
 batch_size = 64
-margin = 0.5
+margin = 1.0
+loss_fn = nn.CrossEntropyLoss()
 for epoch in range(num_epochs):
     print("starting epoch {}".format(epoch))
     for i in range(0, len(data), batch_size):
@@ -90,7 +91,7 @@ for epoch in range(num_epochs):
             negative_predicates.append(neg_pre)
 
         questions = [seg.cut(sent) for sent in questions]
-        q_embeddings = np.concatenate([np.expand_dims(emb.mean(1), 0) for emb in e.sents2elmo(questions, -2)])
+        q_embeddings = np.concatenate([np.expand_dims(emb.mean(1), 0) for emb in e.sents2elmo(questions, -2)]) # 3 * 1024
 
         predicates = [seg.cut(sent) for sent in predicates]
         p_embeddings =  np.concatenate([np.expand_dims(emb.mean(1), 0) for emb in e.sents2elmo(predicates, -2)])
@@ -98,16 +99,23 @@ for epoch in range(num_epochs):
         negative_predicates = [seg.cut(sent) for sent in negative_predicates]
         neg_p_embeddings =  np.concatenate([np.expand_dims(emb.mean(1), 0) for emb in e.sents2elmo(negative_predicates, -2)])
 
-        q_embeddings = torch.Tensor(q_embeddings).long().to(DEVICE)
-        p_embeddings = torch.Tensor(p_embeddings).long().to(DEVICE)
-        neg_p_embeddings = torch.Tensor(neg_p_embeddings).long().to(DEVICE)
+        q_embeddings = torch.Tensor(q_embeddings).to(DEVICE)
+        p_embeddings = torch.Tensor(p_embeddings).to(DEVICE)
+        neg_p_embeddings = torch.Tensor(neg_p_embeddings).to(DEVICE)
        
         pos_score = model(q_embeddings, p_embeddings)
         neg_score = model(q_embeddings, neg_p_embeddings)
+
+        # code.interact(local=locals())
        
-        loss = -(pos_score - neg_score - margin)
-        loss[loss < 0] = 0
-        loss = loss.mean()
+        scores = torch.cat([pos_score, neg_score], 1)
+        labels = torch.zeros(scores.shape[0]).to(scores.device).long()
+
+        # loss = -(pos_score - neg_score - margin)
+        # loss[loss < 0] = 0
+        loss = loss_fn(scores, labels)
+
+        # loss = loss.mean()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -115,6 +123,6 @@ for epoch in range(num_epochs):
         if i // batch_size % 100 ==0:
             print("batch {} loss {}".format(i // batch_size, loss.item()))
 
-    model_path = "snli_checkpoints/elmo_sim_model-epoch{}.py".format(epoch)
+    model_path = "snli_checkpoints/elmo_sim_model-epoch{}.pt".format(epoch)
     print("saving model to {}".format(model_path))
     torch.save(model.state_dict(), model_path)
