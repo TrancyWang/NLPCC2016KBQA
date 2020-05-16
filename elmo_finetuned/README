@@ -1,0 +1,13 @@
+
+
+core_elmo.py answerAllQ_elmo.sh: 使用ELMo和cosine similarity来回答问题
+core_elmo_snli.py answerAllQ_elmo_snli.sh: 使用ELMo和snli similarity计算模型来回答问题
+
+run_train_snli.sh snli_main.py: 训练一个基于ELMo和snli的文本相似度模型
+
+models.py: snli模型
+
+忽略以下文件：
+main.py
+run_train.sh
+
